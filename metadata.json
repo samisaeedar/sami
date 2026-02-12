@@ -1,0 +1,7 @@
+{
+  "name": "Copy of تجريب",
+  "description": "Professional landing page for Al-Areiqi Industrial & Engineering Services.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
