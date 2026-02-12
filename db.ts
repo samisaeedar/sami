@@ -4,6 +4,39 @@
  * Pure IndexedDB persistence layer for Frontend-only deployment.
  */
 
+export interface Project {
+  id?: number;
+  title: string;
+  category: string;
+  image: string;
+  description: string;
+  status?: 'published' | 'draft' | 'archived';
+  createdAt?: string;
+  updatedAt?: string;
+  location?: string;
+  client_name?: string;
+  end_date?: string;
+}
+
+export interface User {
+  id?: number;
+  name: string;
+  username: string;
+  password?: string;
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR' | 'VIEWER';
+  status: 'active' | 'suspended';
+  permissions?: Record<string, string[]>;
+}
+
+export interface Settings {
+  id: string;
+  logo: string;
+  heroImage: string;
+  maintenanceMode: boolean;
+  theme: 'dark' | 'light';
+  announcement?: string;
+}
+
 const DB_NAME = 'AreiqiIndustrial_v10';
 const DB_VERSION = 1;
 const STORES = ['projects', 'gallery', 'messages', 'partners', 'settings', 'users', 'activity_logs', 'trash'];
@@ -119,7 +152,8 @@ export const db = {
     return new Promise((resolve, reject) => {
       const getReq = store.get(id);
       getReq.onsuccess = () => {
-        const updated = { ...getReq.result, ...updates, id, updatedAt: new Date().toISOString() };
+        const original = getReq.result || {};
+        const updated = { ...original, ...updates, id, updatedAt: new Date().toISOString() };
         const putReq = store.put(updated);
         putReq.onsuccess = async () => {
           await this.logActivity('تعديل', `${storeName}`);
@@ -143,8 +177,10 @@ export const db = {
         const getReq = mainStore.get(id);
         getReq.onsuccess = () => {
           const item = getReq.result;
-          trashStore.add({ ...item, originalStore: storeName, deletedAt: new Date().toISOString() });
-          mainStore.delete(id);
+          if (item) {
+            trashStore.add({ ...item, originalStore: storeName, deletedAt: new Date().toISOString() });
+            mainStore.delete(id);
+          }
         };
         transaction.oncomplete = async () => {
           const all = await this.getItems(storeName);
@@ -167,13 +203,14 @@ export const db = {
     });
   },
 
-  async getSettings() {
+  async getSettings(): Promise<Settings> {
     const database = await dbPromise;
     return new Promise((resolve) => {
       const transaction = database.transaction('settings', 'readonly');
       const store = transaction.objectStore('settings');
       const request = store.get('main_config');
       request.onsuccess = () => resolve(request.result || {
+        id: 'main_config',
         logo: 'https://engaliareeki.github.io/web/assets/images/logo.png',
         heroImage: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158',
         maintenanceMode: false,
@@ -182,21 +219,21 @@ export const db = {
     });
   },
 
-  async updateSettings(updates: any) {
+  async updateSettings(updates: Partial<Settings>) {
     const database = await dbPromise;
     const current = await this.getSettings();
     const transaction = database.transaction('settings', 'readwrite');
     const store = transaction.objectStore('settings');
-    const item = { ...current, ...updates, id: 'main_config' };
+    const item = { ...(current || {}), ...(updates || {}), id: 'main_config' };
     return new Promise((resolve) => {
       const request = store.put(item);
       request.onsuccess = () => { notify('settings', item); resolve(item); };
     });
   },
 
-  async login(username: string, password: string) {
+  async login(username: string, password: string): Promise<User> {
     if (username === 'admin' && password === 'sami2025') {
-      const admin = { id: 0, name: 'Sami Al-Areiqi', role: 'SUPER_ADMIN', permissions: { all: true } };
+      const admin: User = { id: 0, name: 'Sami Al-Areiqi', username: 'admin', role: 'SUPER_ADMIN', status: 'active', permissions: { all: [] } };
       localStorage.setItem('areiqi_session_v10', JSON.stringify(admin));
       notify('auth', { user: admin });
       return admin;
@@ -216,26 +253,26 @@ export const db = {
     notify('auth', { user: null });
   },
 
-  getCurrentUser() {
+  getCurrentUser(): User | null {
     const session = localStorage.getItem('areiqi_session_v10');
     return session ? JSON.parse(session) : null;
   },
 
-  onAuthChange(callback: (user: any) => void) {
+  onAuthChange(callback: (user: any) => void): () => void {
     callback(this.getCurrentUser());
     const wrapped = (data: any) => callback(data.user);
     (listeners['auth'] = listeners['auth'] || new Set()).add(wrapped);
-    return () => listeners['auth']?.delete(wrapped);
+    return () => { listeners['auth']?.delete(wrapped); };
   },
 
-  listenProjects: (cb: any) => { db.getItems('projects').then(cb); (listeners['projects'] = listeners['projects'] || new Set()).add(cb); return () => listeners['projects']?.delete(cb); },
-  listenGallery: (cb: any) => { db.getItems('gallery').then(cb); (listeners['gallery'] = listeners['gallery'] || new Set()).add(cb); return () => listeners['gallery']?.delete(cb); },
-  listenMessages: (cb: any) => { db.getItems('messages').then(cb); (listeners['messages'] = listeners['messages'] || new Set()).add(cb); return () => listeners['messages']?.delete(cb); },
-  listenPartners: (cb: any) => { db.getItems('partners').then(cb); (listeners['partners'] = listeners['partners'] || new Set()).add(cb); return () => listeners['partners']?.delete(cb); },
-  listenUsers: (cb: any) => { db.getItems('users').then(cb); (listeners['users'] = listeners['users'] || new Set()).add(cb); return () => listeners['users']?.delete(cb); },
-  listenSettings: (cb: any) => { db.getSettings().then(cb); (listeners['settings'] = listeners['settings'] || new Set()).add(cb); return () => listeners['settings']?.delete(cb); },
-  listenActivity: (cb: any) => { db.getItems('activity_logs').then(cb); (listeners['activity_logs'] = listeners['activity_logs'] || new Set()).add(cb); return () => listeners['activity_logs']?.delete(cb); },
-  listenTrash: (cb: any) => { db.getItems('trash').then(cb); (listeners['trash'] = listeners['trash'] || new Set()).add(cb); return () => listeners['trash']?.delete(cb); },
+  listenProjects: (cb: any) => { db.getItems('projects').then(cb); (listeners['projects'] = listeners['projects'] || new Set()).add(cb); return () => { listeners['projects']?.delete(cb); }; },
+  listenGallery: (cb: any) => { db.getItems('gallery').then(cb); (listeners['gallery'] = listeners['gallery'] || new Set()).add(cb); return () => { listeners['gallery']?.delete(cb); }; },
+  listenMessages: (cb: any) => { db.getItems('messages').then(cb); (listeners['messages'] = listeners['messages'] || new Set()).add(cb); return () => { listeners['messages']?.delete(cb); }; },
+  listenPartners: (cb: any) => { db.getItems('partners').then(cb); (listeners['partners'] = listeners['partners'] || new Set()).add(cb); return () => { listeners['partners']?.delete(cb); }; },
+  listenUsers: (cb: any) => { db.getItems('users').then(cb); (listeners['users'] = listeners['users'] || new Set()).add(cb); return () => { listeners['users']?.delete(cb); }; },
+  listenSettings: (cb: any) => { db.getSettings().then(cb); (listeners['settings'] = listeners['settings'] || new Set()).add(cb); return () => { listeners['settings']?.delete(cb); }; },
+  listenActivity: (cb: any) => { db.getItems('activity_logs').then(cb); (listeners['activity_logs'] = listeners['activity_logs'] || new Set()).add(cb); return () => { listeners['activity_logs']?.delete(cb); }; },
+  listenTrash: (cb: any) => { db.getItems('trash').then(cb); (listeners['trash'] = listeners['trash'] || new Set()).add(cb); return () => { listeners['trash']?.delete(cb); }; },
 
   async initializeDefaults() {
     const users = await this.getItems('users');

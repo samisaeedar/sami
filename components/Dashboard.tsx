@@ -82,7 +82,7 @@ const Dashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   useEffect(() => {
     const unsub = db.onAuthChange(setUser);
-    return () => unsub();
+    return () => { unsub(); };
   }, []);
 
   useEffect(() => {
@@ -99,7 +99,7 @@ const Dashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       db.listenTrash(setTrash)
     ];
     setTimeout(() => setLoading(false), 500);
-    return () => unsubs.forEach(fn => fn());
+    return () => { unsubs.forEach(fn => fn()); };
   }, [user]);
 
   const hasPermission = useCallback((section: string, action: string) => {
